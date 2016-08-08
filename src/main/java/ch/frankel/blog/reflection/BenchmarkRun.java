@@ -1,31 +1,47 @@
 package ch.frankel.blog.reflection;
 
 import org.openjdk.jmh.annotations.Benchmark;
+import org.openjdk.jmh.annotations.Scope;
+import org.openjdk.jmh.annotations.State;
 
-import java.lang.reflect.AccessibleObject;
-import java.lang.reflect.Field;
+import com.esotericsoftware.reflectasm.MethodAccess;
+
+import java.lang.reflect.Method;
 import java.util.Date;
 
+@State(Scope.Thread)
 public class BenchmarkRun {
+	public Person immutablePerson = newImmutablePerson();
+	public Person mutablePerson = newMutablePerson();
 
     @Benchmark
-    public void runImmutableWithoutReflection() {
-        getWithoutReflection(newImmutablePerson());
+    public String runImmutableWithoutReflection() {
+        return getWithoutReflection(immutablePerson);
     }
 
     @Benchmark
-    public void runMutableWithoutReflection() {
-        getWithoutReflection(newMutablePerson());
+    public String runMutableWithoutReflection() {
+        return getWithoutReflection(mutablePerson);
     }
 
     @Benchmark
-    public void runImmutableWithReflection() throws Exception {
-        getWithReflection(newImmutablePerson());
+    public String runImmutableWithReflection() throws Exception {
+        return getWithReflection(immutablePerson);
     }
 
     @Benchmark
-    public void runMutableWithReflection() throws Exception {
-        getWithReflection(newMutablePerson());
+    public String runMutableWithReflection() throws Exception {
+        return getWithReflection(mutablePerson);
+    }
+
+    @Benchmark
+    public String runImmutableWithReflectAsm() throws Exception {
+        return getWithReflectAsm(immutablePerson);
+    }
+
+    @Benchmark
+    public String runMutableWithReflectAsm() throws Exception {
+        return getWithReflectAsm(mutablePerson);
     }
 
     private Person newImmutablePerson() {
@@ -40,25 +56,33 @@ public class BenchmarkRun {
         return person;
     }
 
-    private void getWithoutReflection(Person person) {
-        person.getFirstName();
-        person.getLastName();
-        person.getBirthDate();
+    private String getWithoutReflection(Person person) {
+        return person.getFirstName();
     }
 
-    private void getWithReflection(Person person) throws Exception {
-        Class<? extends Person> clazz;
-        if (person instanceof MutablePerson) {
-            clazz = MutablePerson.class;
-        } else {
-            clazz = ImmutablePerson.class;
-        }
-        Field firstName = clazz.getDeclaredField("firstName");
-        Field lastName = clazz.getDeclaredField("lastName");
-        Field birthDate = clazz.getDeclaredField("birthDate");
-        Field.setAccessible(new AccessibleObject[] { firstName, lastName, birthDate }, true);
-        firstName.get(person);
-        lastName.get(person);
-        birthDate.get(person);
+    private static final Method PERSON_GETTER = createGetter();
+
+    private String getWithReflection(Person person) throws Exception {
+    	return (String)PERSON_GETTER.invoke(person);
     }
+
+	private static Method createGetter() {
+		try {
+			return Person.class.getMethod("getFirstName");
+		} catch (Exception ex) {
+			throw new RuntimeException(ex);
+		}
+	}
+
+	private static final MethodAccess METHOD_ACCESS;
+	private static final int METHOD_IDX;
+
+	static {
+		METHOD_ACCESS = MethodAccess.get(Person.class);
+		METHOD_IDX = METHOD_ACCESS.getIndex("getFirstName");
+	}
+
+	private String getWithReflectAsm(Person person) throws Exception {
+		return (String) METHOD_ACCESS.invoke(person, METHOD_IDX);
+	}
 }
